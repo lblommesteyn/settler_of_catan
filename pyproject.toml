@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "catanopeningi"
+version = "0.1.0"
+description = "Catan Opening Intelligence — evaluate and explain opening settlement placements"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.24",
+    "scipy>=1.10",
+    "scikit-learn>=1.3",
+    "pandas>=2.0",
+    "networkx>=3.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+    "matplotlib>=3.7",
+    "jupyter>=1.0",
+    "shap>=0.42",
+    "lightgbm>=4.0",
+    "orjson>=3.9",
+    "tqdm>=4.65",
+    "pyarrow>=12",
+]
+vision = [
+    "Pillow>=10.0",
+    "opencv-python>=4.10",
+    "mss>=9.0",
+    "easyocr>=1.7",
+]
+
+[project.scripts]
+catan-score = "catan.scorer.cli:main"
+catan-colonist-cv = "catan.colonist_cv.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

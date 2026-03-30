@@ -1,0 +1,2 @@
+[console_scripts]
+catan-score = catan.scorer.cli:main

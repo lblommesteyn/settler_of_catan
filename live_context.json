@@ -1,0 +1,27 @@
+{
+  "current_player": 0,
+  "phase": "pre_roll",
+  "private_pov": {
+    "player_id": 0,
+    "resources": {
+      "wood": 0,
+      "brick": 0,
+      "sheep": 0,
+      "wheat": 0,
+      "ore": 0
+    },
+    "dev_cards_in_hand": {},
+    "new_dev_cards_in_hand": {},
+    "hidden_vp_cards": 0
+  },
+  "public_overrides": [],
+  "turn_number": 0,
+  "setup_step": 0,
+  "pending_setup_vertex": null,
+  "pending_discarders": [],
+  "free_roads_remaining": 0,
+  "dev_card_played_this_turn": false,
+  "dice_rolled_this_turn": false,
+  "last_roll": null,
+  "winner_id": null
+}
