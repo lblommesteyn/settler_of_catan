@@ -18,6 +18,7 @@ from .advisor import HeuristicActionAdvisor
 from .bootstrap import auto_bootstrap_board
 from .context_ocr import read_screen_context
 from .detector import DetectionError
+from .fixture_store import FIXTURE_DIR, blank_label, save_label, _hex_key
 from .geometry import BoardCalibration
 from .opening_live import OpeningLiveRunner, analyze_opening_screen, suggestion_target_text
 from .runtime import LiveAdvisorRunner, ScreenRegion, format_strategy_lines, grab_screen, save_calibration_interactive
@@ -338,6 +339,43 @@ def _cmd_init_context(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_capture_fixture(args: argparse.Namespace) -> int:
+    region = ScreenRegion.parse(args.bbox) if args.bbox else None
+    frame = grab_screen(region)
+
+    name = args.name
+    out_dir = Path(args.output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    image_path = out_dir / f"{name}.png"
+    label_path = out_dir / f"{name}.json"
+
+    bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    cv2.imwrite(str(image_path), bgr)
+
+    tags = [t.strip() for t in args.tags.split(",") if t.strip()] if args.tags else []
+    label = blank_label(name, tags=tags)
+    label.resolution = [frame.shape[1], frame.shape[0]]
+
+    # Pre-fill board fields from auto-bootstrap when possible
+    try:
+        bootstrap = auto_bootstrap_board(frame)
+        label.resources_by_hex = {
+            _hex_key(h): bootstrap.resources_by_hex[h].value for h in AXIAL_POSITIONS
+        }
+        label.numbers_by_hex = {
+            _hex_key(h): bootstrap.numbers_by_hex[h] for h in AXIAL_POSITIONS
+        }
+        label.desert_hex = list(bootstrap.desert_hex)
+    except DetectionError:
+        print("Warning: auto-bootstrap failed; board fields left empty for manual fill.")
+
+    save_label(label, label_path)
+    print(f"Saved screenshot  -> {image_path}")
+    print(f"Saved label       -> {label_path}")
+    print("Edit the label JSON to correct/complete ground truth, then commit both files.")
+    return 0
+
+
 def _cmd_init_board(args: argparse.Namespace) -> int:
     _write_board_template(Path(args.output))
     print(f"Saved board template to {args.output}")
@@ -464,6 +502,19 @@ def main() -> int:
     context_screen.add_argument("--my-color", default="auto", help="Local color or 'auto'")
     context_screen.add_argument("--color-order", default="red,blue,orange,green", help="Seat colors in player-id order")
     context_screen.set_defaults(func=_cmd_context_screen)
+
+    capture_fixture = subparsers.add_parser(
+        "capture-fixture",
+        help="Grab a Colonist screenshot and save it with a label template for ground truth",
+    )
+    capture_fixture.add_argument("name", help="Fixture name (used as filename stem, e.g. 'setup_s1_1080p')")
+    capture_fixture.add_argument("--bbox", help="Optional capture box: left,top,right,bottom")
+    capture_fixture.add_argument("--tags", help="Comma-separated tags, e.g. 'setup,1080p'")
+    capture_fixture.add_argument(
+        "--output-dir", default=str(FIXTURE_DIR),
+        help="Directory to write fixtures into (default: tests/fixtures/colonist/)",
+    )
+    capture_fixture.set_defaults(func=_cmd_capture_fixture)
 
     args = parser.parse_args()
     try:

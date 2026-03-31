@@ -15,6 +15,9 @@ tmp_*.json
 
 games.tar.gz
 
+# Fixture screenshots (large PNGs) — labels (.json) are committed
+tests/fixtures/colonist/*.png
+
 data/gnn/dataset.pt
 data/gnn/tensors_cache.pt
 data/processed/dataset.npz
