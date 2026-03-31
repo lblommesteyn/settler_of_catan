@@ -209,6 +209,8 @@ def _cmd_live(args: argparse.Namespace) -> int:
         top_k=args.top_k,
         interval_s=args.interval,
         once=args.once,
+        slow_loop_ms=args.slow_loop_ms,
+        stale_seconds=args.stale_seconds,
     )
     return 0
 
@@ -288,6 +290,16 @@ def _cmd_opening_live(args: argparse.Namespace) -> int:
         show=not args.no_show,
     )
     return 0
+
+
+def _add_opening_live_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--bbox", help="Optional capture box: left,top,right,bottom")
+    parser.add_argument("--my-color", default="auto", help="Local color or 'auto'")
+    parser.add_argument("--top-k", type=int, default=3, help="Number of suggestions to track")
+    parser.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
+    parser.add_argument("--once", action="store_true", help="Capture and analyze once")
+    parser.add_argument("--no-show", action="store_true", help="Do not open the overlay window")
+    parser.set_defaults(func=_cmd_opening_live)
 
 
 def _cmd_init_context(args: argparse.Namespace) -> int:
@@ -391,6 +403,8 @@ def main() -> int:
     live.add_argument("--top-k", type=int, default=5)
     live.add_argument("--color-order", default="red,blue,orange,green", help="Seat colors in player-id order")
     live.add_argument("--my-color", default="auto", help="Local color or 'auto'")
+    live.add_argument("--slow-loop-ms", type=float, default=350.0, help="Warn when one loop exceeds this latency target")
+    live.add_argument("--stale-seconds", type=float, default=30.0, help="Report when advice has not changed for this long")
     live.add_argument("--once", action="store_true", help="Capture and advise once instead of polling")
     live.set_defaults(func=_cmd_live)
 
@@ -431,13 +445,7 @@ def main() -> int:
         "opening-live",
         help="Continuously watch Colonist and overlay setup placement suggestions from the screen",
     )
-    opening_live.add_argument("--bbox", help="Optional capture box: left,top,right,bottom")
-    opening_live.add_argument("--my-color", default="auto", help="Local color or 'auto'")
-    opening_live.add_argument("--top-k", type=int, default=3, help="Number of suggestions to track")
-    opening_live.add_argument("--interval", type=float, default=1.0, help="Polling interval in seconds")
-    opening_live.add_argument("--once", action="store_true", help="Capture and analyze once")
-    opening_live.add_argument("--no-show", action="store_true", help="Do not open the overlay window")
-    opening_live.set_defaults(func=_cmd_opening_live)
+    _add_opening_live_arguments(opening_live)
 
     context_screen = subparsers.add_parser(
         "context-screen",
@@ -458,3 +466,14 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def opening_live_main() -> int:
+    parser = argparse.ArgumentParser(description="Run the Colonist opening overlay directly")
+    _add_opening_live_arguments(parser)
+    args = parser.parse_args()
+    try:
+        return args.func(args)
+    except DetectionError as exc:
+        parser.error(str(exc))
+    return 2

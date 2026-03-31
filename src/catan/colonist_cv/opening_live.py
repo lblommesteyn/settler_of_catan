@@ -845,6 +845,7 @@ class OpeningLiveRunner:
     ) -> None:
         previous = None
         bootstrap: Optional[AutoBoardBootstrap] = None
+        consecutive_failures = 0
         window_name = "Catan Opening Assistant"
         if show:
             cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -855,7 +856,45 @@ class OpeningLiveRunner:
                     analysis = analyze_opening_screen(frame, my_color=my_color, top_k=top_k, bootstrap=bootstrap)
                 except DetectionError:
                     bootstrap = None
-                    analysis = analyze_opening_screen(frame, my_color=my_color, top_k=top_k, bootstrap=None)
+                    try:
+                        analysis = analyze_opening_screen(frame, my_color=my_color, top_k=top_k, bootstrap=None)
+                    except DetectionError as exc:
+                        consecutive_failures += 1
+                        if consecutive_failures == 1 or consecutive_failures % 5 == 0 or once:
+                            print(f"\n[{time.strftime('%H:%M:%S')}] opening warning x{consecutive_failures}: {exc}")
+                        if show:
+                            status = cv2.cvtColor(frame.copy(), cv2.COLOR_RGB2BGR)
+                            cv2.rectangle(status, (20, 20), (min(status.shape[1] - 20, 1260), 105), (10, 24, 38), -1)
+                            cv2.putText(
+                                status,
+                                "Waiting for a visible setup prompt and readable board...",
+                                (32, 58),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.75,
+                                (245, 245, 245),
+                                2,
+                                cv2.LINE_AA,
+                            )
+                            cv2.putText(
+                                status,
+                                str(exc)[:120],
+                                (32, 90),
+                                cv2.FONT_HERSHEY_SIMPLEX,
+                                0.55,
+                                (228, 235, 239),
+                                1,
+                                cv2.LINE_AA,
+                            )
+                            cv2.imshow(window_name, status)
+                            key = cv2.waitKey(max(1, int(interval_s * 1000))) & 0xFF
+                            if key == ord("q"):
+                                return
+                        else:
+                            time.sleep(interval_s)
+                        if once:
+                            raise
+                        continue
+                consecutive_failures = 0
                 bootstrap = analysis.bootstrap
                 fingerprint = _analysis_fingerprint(analysis)
                 if fingerprint != previous:

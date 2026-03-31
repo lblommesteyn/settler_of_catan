@@ -38,6 +38,7 @@ vision = [
 [project.scripts]
 catan-score = "catan.scorer.cli:main"
 catan-colonist-cv = "catan.colonist_cv.cli:main"
+catan-opening-live = "catan.colonist_cv.cli:opening_live_main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

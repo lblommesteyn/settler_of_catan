@@ -11,8 +11,10 @@ from catan.colonist_cv.advisor import HeuristicActionAdvisor
 from catan.colonist_cv.detector import ColonistVisionDetector, DefaultPlayerPalette
 from catan.colonist_cv.geometry import BoardCalibration
 from catan.colonist_cv.runtime import (
+    LoopMetrics,
     ScreenRegion,
     apply_context_overrides,
+    format_metrics_line,
     fingerprint_observation,
     format_strategy_lines,
     load_live_context,
@@ -239,8 +241,9 @@ def test_advisor_prefers_building_settlement_over_ending_turn():
 
     plan = HeuristicActionAdvisor(engine).strategy_plan(state)
     assert "Tempo" in plan.lean or "Expansion" in plan.lean
-    assert "settlement" in plan.buy_priority.lower()
-    assert "Goal:" in format_strategy_lines(plan)[2]
+    assert "settlement" in plan.build_queue.lower()
+    assert "Pivot:" in format_strategy_lines(plan)[2]
+    assert "Goal:" in format_strategy_lines(plan)[3]
 
 
 def test_live_context_loader_and_override_merge(tmp_path):
@@ -320,3 +323,17 @@ def test_screen_region_parse_and_fingerprint_changes_with_private_hand():
         )
     )
     assert before != after
+
+
+def test_format_metrics_line_marks_slow_loop():
+    metrics = LoopMetrics(
+        capture_ms=40.0,
+        context_ms=90.0,
+        detect_ms=120.0,
+        advise_ms=30.0,
+        total_ms=280.0,
+    )
+    line = format_metrics_line(metrics, slow_loop_ms=250.0)
+    assert "Loop:" in line
+    assert "capture 40" in line
+    assert "[slow]" in line

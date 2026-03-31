@@ -60,6 +60,18 @@ class LiveContext:
     winner_id: Optional[int] = None
 
 
+@dataclass(frozen=True)
+class LoopMetrics:
+    capture_ms: float
+    context_ms: float
+    detect_ms: float
+    advise_ms: float
+    total_ms: float
+
+    def is_slow(self, target_ms: float) -> bool:
+        return self.total_ms > target_ms
+
+
 def grab_screen(region: Optional[ScreenRegion]) -> np.ndarray:
     image = ImageGrab.grab(bbox=region.as_bbox() if region is not None else None, all_screens=True)
     return np.asarray(image.convert("RGB"))
@@ -267,10 +279,22 @@ def format_advice_lines(advice: list[ActionAdvice]) -> list[str]:
 def format_strategy_lines(plan: StrategyPlan) -> list[str]:
     return [
         f"Lean: {plan.lean}",
-        f"Buy: {plan.buy_priority}",
+        f"Queue: {plan.build_queue}",
+        f"Pivot: {plan.pivot}",
         f"Goal: {plan.hand_goal}",
         f"Risk: {plan.risk}",
     ]
+
+
+def format_metrics_line(metrics: LoopMetrics, slow_loop_ms: float) -> str:
+    status = "slow" if metrics.is_slow(slow_loop_ms) else "ok"
+    return (
+        "Loop: "
+        f"{metrics.total_ms:.0f}ms total "
+        f"(capture {metrics.capture_ms:.0f} | context {metrics.context_ms:.0f} | "
+        f"detect {metrics.detect_ms:.0f} | advise {metrics.advise_ms:.0f}) "
+        f"[{status}]"
+    )
 
 
 def _merge_screen_context(
@@ -341,44 +365,95 @@ class LiveAdvisorRunner:
         top_k: int = 5,
         interval_s: float = 1.0,
         once: bool = False,
+        slow_loop_ms: float = 350.0,
+        stale_seconds: float = 30.0,
     ) -> None:
         previous_fingerprint = None
+        consecutive_failures = 0
+        last_change_at = time.perf_counter()
+        stale_reported = False
         while True:
-            frame = grab_screen(region)
-            fallback = load_live_context(context_path) if context_path is not None and context_path.exists() else None
-            player_id_hint = None
-            if fallback is not None and fallback.private_pov is not None:
-                player_id_hint = fallback.private_pov.player_id
-            elif my_color is not None and my_color in self.color_to_player:
-                player_id_hint = self.color_to_player[my_color]
-            detected = read_screen_context(
-                frame,
-                my_color=my_color,
-                color_to_player=self.color_to_player,
-                player_id_hint=player_id_hint,
-            )
-            context = _merge_screen_context(detected, fallback)
-            observation = self.detector.detect_frame(
-                frame,
-                board=self.board,
-                calibration=self.calibration,
-                color_to_player=self.color_to_player,
-                current_player=context.current_player,
-                phase=context.phase,
-                private_pov=context.private_pov,
-            )
-            observation = apply_context_overrides(observation, context)
-            fingerprint = fingerprint_observation(observation)
-            if fingerprint != previous_fingerprint:
-                state = self.tracker.ingest(observation)
-                plan = self.advisor.strategy_plan(state)
-                advice = self.advisor.suggest(state, top_k=top_k)
-                print(f"\n[{time.strftime('%H:%M:%S')}] player={observation.current_player} phase={observation.phase.value}")
-                for line in format_strategy_lines(plan):
-                    print(line)
-                for line in format_advice_lines(advice):
-                    print(line)
-                previous_fingerprint = fingerprint
+            try:
+                loop_start = time.perf_counter()
+
+                frame = grab_screen(region)
+                after_capture = time.perf_counter()
+
+                fallback = load_live_context(context_path) if context_path is not None and context_path.exists() else None
+                player_id_hint = None
+                if fallback is not None and fallback.private_pov is not None:
+                    player_id_hint = fallback.private_pov.player_id
+                elif my_color is not None and my_color in self.color_to_player:
+                    player_id_hint = self.color_to_player[my_color]
+                detected = read_screen_context(
+                    frame,
+                    my_color=my_color,
+                    color_to_player=self.color_to_player,
+                    player_id_hint=player_id_hint,
+                )
+                context = _merge_screen_context(detected, fallback)
+                after_context = time.perf_counter()
+
+                observation = self.detector.detect_frame(
+                    frame,
+                    board=self.board,
+                    calibration=self.calibration,
+                    color_to_player=self.color_to_player,
+                    current_player=context.current_player,
+                    phase=context.phase,
+                    private_pov=context.private_pov,
+                )
+                observation = apply_context_overrides(observation, context)
+                after_detect = time.perf_counter()
+
+                fingerprint = fingerprint_observation(observation)
+                advise_ms = 0.0
+                metrics = LoopMetrics(
+                    capture_ms=(after_capture - loop_start) * 1000.0,
+                    context_ms=(after_context - after_capture) * 1000.0,
+                    detect_ms=(after_detect - after_context) * 1000.0,
+                    advise_ms=0.0,
+                    total_ms=(after_detect - loop_start) * 1000.0,
+                )
+
+                if fingerprint != previous_fingerprint:
+                    advise_start = time.perf_counter()
+                    state = self.tracker.ingest(observation)
+                    plan = self.advisor.strategy_plan(state)
+                    advice = self.advisor.suggest(state, top_k=top_k)
+                    advise_ms = (time.perf_counter() - advise_start) * 1000.0
+                    metrics = LoopMetrics(
+                        capture_ms=metrics.capture_ms,
+                        context_ms=metrics.context_ms,
+                        detect_ms=metrics.detect_ms,
+                        advise_ms=advise_ms,
+                        total_ms=((time.perf_counter() - loop_start) * 1000.0),
+                    )
+                    print(f"\n[{time.strftime('%H:%M:%S')}] player={observation.current_player} phase={observation.phase.value}")
+                    for line in format_strategy_lines(plan):
+                        print(line)
+                    for line in format_advice_lines(advice):
+                        print(line)
+                    print(format_metrics_line(metrics, slow_loop_ms))
+                    previous_fingerprint = fingerprint
+                    last_change_at = time.perf_counter()
+                    stale_reported = False
+                elif stale_seconds > 0 and not stale_reported and (time.perf_counter() - last_change_at) >= stale_seconds:
+                    print(f"\n[{time.strftime('%H:%M:%S')}] state unchanged for {stale_seconds:.0f}s; holding prior advice")
+                    print(format_metrics_line(metrics, slow_loop_ms))
+                    stale_reported = True
+
+                consecutive_failures = 0
+            except DetectionError as exc:
+                consecutive_failures += 1
+                if consecutive_failures == 1 or consecutive_failures % 5 == 0 or once:
+                    print(f"\n[{time.strftime('%H:%M:%S')}] detection warning x{consecutive_failures}: {exc}")
+                if consecutive_failures >= 3:
+                    self.tracker.reset()
+                    previous_fingerprint = None
+                if once:
+                    raise
+
             if once:
                 return
             time.sleep(interval_s)

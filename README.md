@@ -31,7 +31,45 @@ Primary CLI entrypoints:
 ```bash
 catan-score
 catan-colonist-cv
+catan-opening-live
 ```
+
+## Opening overlay
+
+Fastest way to bring up the live setup assistant:
+
+```bash
+catan-opening-live
+```
+
+Useful flags:
+
+```bash
+catan-opening-live --my-color red
+catan-opening-live --bbox 100,100,1600,1000
+catan-opening-live --top-k 3
+```
+
+This mode watches the Colonist setup screen directly and does not need a board JSON or calibration file.
+
+## Full live advisor
+
+The midgame advisor still needs a mapped board and calibration:
+
+```bash
+catan-colonist-cv init-board --output board.json
+catan-colonist-cv calibrate --board board.json --output calibration.json
+catan-colonist-cv live --board board.json --calibration calibration.json --my-color red
+```
+
+Useful diagnostics:
+
+```bash
+catan-colonist-cv context-screen --my-color red
+catan-colonist-cv bootstrap-screen --output board.json
+```
+
+The live loop now reports per-stage latency and will keep running through transient detection failures instead of exiting immediately.
 
 ## Notes
 

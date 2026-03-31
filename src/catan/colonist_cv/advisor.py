@@ -48,7 +48,8 @@ class ActionAdvice:
 @dataclass(frozen=True)
 class StrategyPlan:
     lean: str
-    buy_priority: str
+    build_queue: str
+    pivot: str
     hand_goal: str
     risk: str
 
@@ -110,10 +111,11 @@ class HeuristicActionAdvisor:
         best_settlement = self._best_settlement_site(state, player_id)
         best_city = self._best_city_vertex(state, player_id)
         lean = self._lean_text(lean_key, dominant_resource, ports)
-        buy_priority = self._buy_priority_text(lean_key, state, best_settlement, best_city, legal_actions, dominant_resource)
+        build_queue = self._build_queue_text(lean_key, state, best_settlement, best_city, legal_actions, dominant_resource)
+        pivot = self._pivot_text(lean_key, state, best_settlement, best_city, future_sites, dominant_resource)
         hand_goal = self._hand_goal_text(lean_key, state, best_settlement, best_city, legal_actions, dominant_resource)
         risk = self._risk_text(state, player_id, future_sites)
-        return StrategyPlan(lean=lean, buy_priority=buy_priority, hand_goal=hand_goal, risk=risk)
+        return StrategyPlan(lean=lean, build_queue=build_queue, pivot=pivot, hand_goal=hand_goal, risk=risk)
 
     def _cap_trade_candidates(self, state: ExactGameState, actions: list[Action]) -> list[Action]:
         trades = [action for action in actions if action.action_type == ActionType.OFFER_TRADE]
@@ -317,7 +319,7 @@ class HeuristicActionAdvisor:
             )
         return "Balanced Tempo. Stay flexible and spend into the fastest efficient build each turn."
 
-    def _buy_priority_text(
+    def _build_queue_text(
         self,
         lean_key: str,
         state: ExactGameState,
@@ -333,35 +335,60 @@ class HeuristicActionAdvisor:
 
         if lean_key == "closeout":
             if can_city and best_city is not None:
-                return f"Buy priority: city the {self._vertex_text(state, best_city)} spot, then devs or the winning point."
+                return f"Queue: city {self._vertex_text(state, best_city)} -> dev or settlement for the 10th point."
             if can_dev:
-                return "Buy priority: dev card now if it preserves the race or hides VP."
-            return "Buy priority: move toward the cleanest immediate VP line, even if it means trading first."
+                return "Queue: dev card -> clean closeout point next turn."
+            return "Queue: trade into the cleanest immediate VP line, then close on the next spend."
 
         if lean_key == "city_dev":
             if best_city is not None:
-                return f"Buy priority: city on {self._vertex_text(state, best_city)}, then dev cards."
+                return f"Queue: city {self._vertex_text(state, best_city)} -> dev card -> next city."
             if can_dev:
-                return "Buy priority: dev card first, then city as soon as ore+wheat aligns."
-            return "Buy priority: convert into ore+wheat and keep the city/dev queue moving."
+                return "Queue: dev card -> city as soon as ore+wheat aligns."
+            return "Queue: convert into ore+wheat -> city -> dev pressure."
 
         if lean_key == "expansion":
             if best_settlement is not None:
-                return f"Buy priority: road -> settlement into {self._vertex_text(state, best_settlement)}."
-            return "Buy priority: roads and settlement tempo over devs until the expansion race settles."
+                return f"Queue: settlement {self._vertex_text(state, best_settlement)} -> road to hold lane -> city."
+            return "Queue: road tempo -> settlement if space opens -> city once lanes close."
 
         if lean_key == "port_engine":
             if can_trade:
-                return f"Buy priority: port-convert excess {dominant_resource.value} into city/dev materials."
-            return f"Buy priority: reach live 3:1 or 2:1 trades and cash surplus {dominant_resource.value} efficiently."
+                return f"Queue: port-trade surplus {dominant_resource.value} -> city/dev build -> repeat."
+            return f"Queue: reach live port trades -> cash surplus {dominant_resource.value} -> city/dev."
 
         if can_settle and best_settlement is not None:
-            return f"Buy priority: settlement on {self._vertex_text(state, best_settlement)} if the lane is still yours."
+            return f"Queue: settlement {self._vertex_text(state, best_settlement)} -> city -> dev if blocked."
         if can_city and best_city is not None:
-            return f"Buy priority: city on {self._vertex_text(state, best_city)} if the board is getting crowded."
+            return f"Queue: city {self._vertex_text(state, best_city)} -> settlement if lane stays open."
         if can_dev:
-            return "Buy priority: dev card if the board is blocked or your hand already leans ore+wheat."
-        return "Buy priority: whichever of settlement, city, or dev becomes cheapest first without stalling the turn."
+            return "Queue: dev card -> city or settlement depending which line opens first."
+        return "Queue: take the cheapest live spend first, then pivot into the strongest follow-up line."
+
+    def _pivot_text(
+        self,
+        lean_key: str,
+        state: ExactGameState,
+        best_settlement: Optional[tuple[float, float]],
+        best_city: Optional[tuple[float, float]],
+        future_sites: int,
+        dominant_resource: Resource,
+    ) -> str:
+        if lean_key == "closeout":
+            return "Pivot: if the clean winning point is blocked, buy devs or move the robber to break the race."
+        if lean_key == "city_dev":
+            if best_settlement is not None:
+                return f"Pivot: if ore+wheat stalls, take the fast settlement on {self._vertex_text(state, best_settlement)}."
+            return "Pivot: if ore+wheat stalls, spend down efficiently instead of floating a dead city hand."
+        if lean_key == "expansion":
+            if future_sites <= 1:
+                return "Pivot: the lane is drying up, so stop overpaying for roads and switch into city/dev tempo."
+            return "Pivot: if another player enters the lane first, city your core and abandon the expensive road race."
+        if lean_key == "port_engine":
+            return f"Pivot: if the port line is slow, stop banking on {dominant_resource.value} and move into core city/dev cards."
+        if best_city is not None:
+            return f"Pivot: if the board locks up, city {self._vertex_text(state, best_city)} instead of chasing thin settlement lines."
+        return "Pivot: if the fastest queue closes, take the next efficient spend instead of forcing a low-EV lane."
 
     def _hand_goal_text(
         self,
