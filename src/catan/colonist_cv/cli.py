@@ -228,9 +228,18 @@ def _cmd_context_screen(args: argparse.Namespace) -> int:
 
     print(f"my_color={detected.my_color.value if detected.my_color is not None else 'unknown'}")
     print(f"prompt={detected.prompt_text or '<none>'}")
+    if detected.log_lines:
+        print("log_lines=" + " | ".join(detected.log_lines[-4:]))
     print(f"current_player={detected.current_player if detected.current_player is not None else 'unknown'}")
     print(f"phase={detected.phase.value if detected.phase is not None else 'unknown'}")
     print(f"dice_rolled={detected.dice_rolled_this_turn if detected.dice_rolled_this_turn is not None else 'unknown'}")
+    print(f"setup_step={detected.setup_step if detected.setup_step is not None else 'unknown'}")
+    print(f"last_roll={detected.last_roll if detected.last_roll is not None else 'unknown'}")
+    if detected.pending_discarders:
+        print("pending_discarders=" + ",".join(str(player_id) for player_id in detected.pending_discarders))
+    if detected.recent_events:
+        for event in detected.recent_events[-4:]:
+            print(f"event={event.summary()}")
     if detected.private_pov is None:
         print("hand=<unavailable>")
     else:

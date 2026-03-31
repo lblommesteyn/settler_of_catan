@@ -12,6 +12,7 @@ import numpy as np
 from ..board.board import Resource
 from ..full_solver.state import DevCardType, TurnPhase, empty_hand, playable_resources
 from .detector import DefaultPlayerPalette, DefaultResourcePalette, DetectionError, PrototypeColorClassifier
+from .event_log import ColonistGameEvent, infer_turn_context_from_events, parse_visible_log_lines
 from .ocr import OCRUnavailableError, read_text
 from .schema import PlayerColor, PrivateObservation
 
@@ -23,6 +24,26 @@ PROMPT_REGION_RATIOS = (
 )
 HAND_REGION_RATIOS = (0.10, 0.90, 0.43, 0.995)
 LOCAL_COLOR_REGION_RATIOS = (0.70, 0.89, 0.86, 0.995)
+LOG_REGION_RATIOS = (
+    (0.71, 0.18, 0.995, 0.88),
+    (0.67, 0.12, 0.995, 0.90),
+    (0.64, 0.10, 0.995, 0.92),
+)
+LOG_KEYWORDS = (
+    "rolled",
+    "built",
+    "placed",
+    "bought",
+    "played",
+    "trade",
+    "traded",
+    "discard",
+    "robber",
+    "stole",
+    "largest",
+    "longest",
+    "turn",
+)
 
 
 @dataclass(frozen=True)
@@ -32,7 +53,12 @@ class ScreenContextDetection:
     phase: Optional[TurnPhase]
     private_pov: Optional[PrivateObservation]
     dice_rolled_this_turn: Optional[bool]
+    setup_step: Optional[int] = None
+    pending_discarders: tuple[int, ...] = ()
+    last_roll: Optional[int] = None
     prompt_text: str = ""
+    log_lines: tuple[str, ...] = ()
+    recent_events: tuple[ColonistGameEvent, ...] = ()
 
 
 def _crop_ratio(image: np.ndarray, region: tuple[float, float, float, float]) -> np.ndarray:
@@ -109,6 +135,79 @@ def _detect_prompt_text(image: np.ndarray) -> str:
     return best
 
 
+def _ocr_lines(image: np.ndarray) -> list[str]:
+    try:
+        results = read_text(image, detail=1, paragraph=False)
+    except OCRUnavailableError as exc:
+        raise DetectionError(str(exc)) from exc
+
+    entries: list[tuple[float, float, str]] = []
+    for result in results:
+        if not isinstance(result, (list, tuple)) or len(result) < 2:
+            continue
+        text = str(result[1]).strip()
+        if not text:
+            continue
+        bbox = result[0]
+        xs: list[float] = []
+        ys: list[float] = []
+        if isinstance(bbox, (list, tuple)):
+            for point in bbox:
+                if isinstance(point, (list, tuple)) and len(point) >= 2:
+                    xs.append(float(point[0]))
+                    ys.append(float(point[1]))
+        if xs and ys:
+            entries.append((min(xs), sum(ys) / len(ys), text))
+        else:
+            entries.append((0.0, float(len(entries)), text))
+
+    if not entries:
+        return []
+
+    entries.sort(key=lambda item: (item[1], item[0]))
+    threshold = max(12.0, image.shape[0] * 0.03)
+    groups: list[list[tuple[float, float, str]]] = []
+    for entry in entries:
+        if not groups or abs(entry[1] - groups[-1][0][1]) > threshold:
+            groups.append([entry])
+        else:
+            groups[-1].append(entry)
+
+    lines = []
+    for group in groups:
+        group.sort(key=lambda item: item[0])
+        line = " ".join(fragment for _, _, fragment in group).strip()
+        if line:
+            lines.append(line)
+    return lines
+
+
+def _detect_visible_log_lines(image: np.ndarray) -> tuple[str, ...]:
+    best_lines: tuple[str, ...] = tuple()
+    best_score = -1
+    for region in LOG_REGION_RATIOS:
+        crop = _crop_ratio(image, region)
+        candidates: list[str] = []
+        seen: set[str] = set()
+        for variant in _text_variants(crop):
+            for line in _ocr_lines(variant):
+                normalized = " ".join(str(line).lower().split())
+                if normalized and normalized not in seen:
+                    seen.add(normalized)
+                    candidates.append(line)
+        score = 0
+        for line in candidates:
+            normalized = " ".join(line.lower().split())
+            if any(keyword in normalized for keyword in LOG_KEYWORDS):
+                score += 2
+            if any(color in normalized for color in ("red", "blue", "orange", "green", "white", "brown")):
+                score += 1
+        if score > best_score or (score == best_score and len(candidates) > len(best_lines)):
+            best_lines = tuple(candidates)
+            best_score = score
+    return best_lines
+
+
 def _phase_from_prompt(prompt_text: str) -> tuple[Optional[TurnPhase], Optional[bool]]:
     if not prompt_text:
         return None, None
@@ -123,6 +222,20 @@ def _phase_from_prompt(prompt_text: str) -> tuple[Optional[TurnPhase], Optional[
     if "end turn" in prompt_text or "build" in prompt_text or "maritime" in prompt_text or "bank trade" in prompt_text:
         return TurnPhase.MAIN, True
     return None, None
+
+
+def _current_player_from_prompt(prompt_text: str, player_id: Optional[int]) -> Optional[int]:
+    if player_id is None or not prompt_text:
+        return None
+    if "place settlement" in prompt_text or "place road" in prompt_text:
+        return player_id
+    if "roll" in prompt_text:
+        return player_id
+    if "end turn" in prompt_text or "build" in prompt_text or "maritime" in prompt_text or "bank trade" in prompt_text:
+        return player_id
+    if "robber" in prompt_text and "discard" not in prompt_text:
+        return player_id
+    return None
 
 
 def detect_local_player_color(image: np.ndarray) -> Optional[PlayerColor]:
@@ -244,15 +357,33 @@ def read_screen_context(
 ) -> ScreenContextDetection:
     resolved_color = my_color or detect_local_player_color(image)
     prompt_text = _detect_prompt_text(image)
-    phase, dice_rolled = _phase_from_prompt(prompt_text)
 
     player_id = player_id_hint
     if player_id is None and resolved_color is not None and resolved_color in color_to_player:
         player_id = color_to_player[resolved_color]
 
-    current_player = None
-    if phase is not None and player_id is not None:
-        current_player = player_id
+    prompt_phase, prompt_dice_rolled = _phase_from_prompt(prompt_text)
+    prompt_current_player = _current_player_from_prompt(prompt_text, player_id)
+    need_event_log = prompt_phase is None or prompt_current_player is None or prompt_phase in {
+        TurnPhase.PENDING_TRADE,
+        TurnPhase.RESOLVE_SEVEN,
+    }
+    log_lines: tuple[str, ...] = tuple()
+    recent_events: tuple[ColonistGameEvent, ...] = tuple()
+    inferred = infer_turn_context_from_events(recent_events, color_to_player=color_to_player)
+    if need_event_log:
+        log_lines = _detect_visible_log_lines(image)
+        recent_events = parse_visible_log_lines(log_lines, color_to_player=color_to_player)
+        inferred = infer_turn_context_from_events(recent_events, color_to_player=color_to_player)
+
+    phase = prompt_phase if prompt_phase is not None else inferred.phase
+    current_player = prompt_current_player
+    use_event_current_player = prompt_phase == TurnPhase.PENDING_TRADE or (
+        prompt_phase == TurnPhase.RESOLVE_SEVEN and "discard" in prompt_text
+    )
+    if current_player is None or use_event_current_player:
+        current_player = inferred.current_player
+    dice_rolled = prompt_dice_rolled if prompt_dice_rolled is not None else inferred.dice_rolled_this_turn
 
     private_pov = None
     if player_id is not None:
@@ -270,5 +401,10 @@ def read_screen_context(
         phase=phase,
         private_pov=private_pov,
         dice_rolled_this_turn=dice_rolled,
+        setup_step=inferred.setup_step,
+        pending_discarders=inferred.pending_discarders,
+        last_roll=inferred.last_roll,
         prompt_text=prompt_text,
+        log_lines=log_lines,
+        recent_events=recent_events,
     )

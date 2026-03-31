@@ -309,7 +309,7 @@ def _merge_screen_context(
         phase = fallback.phase
     if current_player is None or phase is None:
         raise DetectionError(
-            "Could not read the active turn from the screen. Pass --my-color and keep the action prompt visible, or keep a context JSON as fallback."
+            "Could not read the active turn from the screen. Keep either the action prompt or event log visible, pass --my-color when needed, or keep a context JSON as fallback."
         )
 
     private_pov = detected.private_pov if detected.private_pov is not None else (fallback.private_pov if fallback is not None else None)
@@ -323,13 +323,13 @@ def _merge_screen_context(
         private_pov=private_pov,
         public_overrides=fallback.public_overrides if fallback is not None else tuple(),
         turn_number=fallback.turn_number if fallback is not None else 0,
-        setup_step=fallback.setup_step if fallback is not None else 0,
+        setup_step=detected.setup_step if detected.setup_step is not None else (fallback.setup_step if fallback is not None else 0),
         pending_setup_vertex=fallback.pending_setup_vertex if fallback is not None else None,
-        pending_discarders=fallback.pending_discarders if fallback is not None else tuple(),
+        pending_discarders=detected.pending_discarders or (fallback.pending_discarders if fallback is not None else tuple()),
         free_roads_remaining=fallback.free_roads_remaining if fallback is not None else 0,
         dev_card_played_this_turn=fallback.dev_card_played_this_turn if fallback is not None else False,
         dice_rolled_this_turn=bool(dice_rolled),
-        last_roll=fallback.last_roll if fallback is not None else None,
+        last_roll=detected.last_roll if detected.last_roll is not None else (fallback.last_roll if fallback is not None else None),
         winner_id=fallback.winner_id if fallback is not None else None,
     )
 
