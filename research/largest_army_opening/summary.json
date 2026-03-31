@@ -1,0 +1,115 @@
+{
+  "games": 41388,
+  "players": 165552,
+  "winners": 41369,
+  "baseline_win_rate": 0.24988523243452207,
+  "ever_claimers": 39901,
+  "ever_claimer_win_rate": 0.4717926869000777,
+  "off_rip_cutoff_completed_turns": 40,
+  "bucket_stats": {
+    "Never": {
+      "players": 125651,
+      "wins": 22544,
+      "win_rate": 0.17941759317474593,
+      "ci95_low": 0.1772959775227427,
+      "ci95_high": 0.18153920882674915
+    },
+    "Off-rip\n(<=40)": {
+      "players": 2467,
+      "wins": 687,
+      "win_rate": 0.27847588163761655,
+      "ci95_low": 0.2607873934132539,
+      "ci95_high": 0.2961643698619792
+    },
+    "Early\n(41-56)": {
+      "players": 14128,
+      "wins": 5860,
+      "win_rate": 0.4147791619479049,
+      "ci95_low": 0.4066548968905487,
+      "ci95_high": 0.42290342700526107
+    },
+    "Mid\n(57-80)": {
+      "players": 21368,
+      "wins": 11030,
+      "win_rate": 0.5161924372894047,
+      "ci95_low": 0.5094917973911296,
+      "ci95_high": 0.5228930771876797
+    },
+    "Late\n(81+)": {
+      "players": 1938,
+      "wins": 1248,
+      "win_rate": 0.6439628482972136,
+      "ci95_low": 0.6226443185267792,
+      "ci95_high": 0.6652813780676481
+    }
+  },
+  "winner_share": {
+    "Never": {
+      "winners": 22544,
+      "share_of_winners": 0.5449491164881917
+    },
+    "Off-rip\n(<=40)": {
+      "winners": 687,
+      "share_of_winners": 0.016606637820590298
+    },
+    "Early\n(41-56)": {
+      "winners": 5860,
+      "share_of_winners": 0.14165196161376875
+    },
+    "Mid\n(57-80)": {
+      "winners": 11030,
+      "share_of_winners": 0.26662476733786167
+    },
+    "Late\n(81+)": {
+      "winners": 1248,
+      "share_of_winners": 0.030167516739587615
+    }
+  },
+  "seat_stats": {
+    "S1": {
+      "baseline_players": 41388,
+      "baseline_win_rate": 0.24905769788344448,
+      "off_rip_players": 901,
+      "off_rip_win_rate": 0.29633740288568255
+    },
+    "S2": {
+      "baseline_players": 41388,
+      "baseline_win_rate": 0.24944428336715957,
+      "off_rip_players": 472,
+      "off_rip_win_rate": 0.2690677966101695
+    },
+    "S3": {
+      "baseline_players": 41388,
+      "baseline_win_rate": 0.25164298830578913,
+      "off_rip_players": 507,
+      "off_rip_win_rate": 0.27218934911242604
+    },
+    "S4": {
+      "baseline_players": 41388,
+      "baseline_win_rate": 0.2493959601816952,
+      "off_rip_players": 587,
+      "off_rip_win_rate": 0.26405451448040884
+    }
+  },
+  "cumulative_claim_cutoffs": {
+    "40": {
+      "players": 2467,
+      "wins": 687,
+      "win_rate": 0.27847588163761655,
+      "share_of_winners": 0.016606637820590298
+    },
+    "48": {
+      "players": 7614,
+      "wins": 2628,
+      "win_rate": 0.34515366430260047,
+      "share_of_winners": 0.0635258285189393
+    },
+    "56": {
+      "players": 16595,
+      "wins": 6547,
+      "win_rate": 0.3945164206086171,
+      "share_of_winners": 0.15825859943435905
+    }
+  },
+  "verdict": "Largest Army is a viable midgame pivot, but not a default opening plan to force from turn 1."
+}
